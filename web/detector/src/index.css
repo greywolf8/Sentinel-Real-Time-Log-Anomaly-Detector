@@ -1,0 +1,289 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #334155;
+}
+
+.header h1 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.header .status {
+  font-size: 14px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.card {
+  background-color: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.card-header {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #f1f5f9;
+}
+
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.health-item {
+  background-color: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.health-item:hover {
+  border-color: #3b82f6;
+}
+
+.health-item.critical {
+  border-color: #ef4444;
+  background-color: #450a0a;
+}
+
+.health-item.high {
+  border-color: #f97316;
+  background-color: #431407;
+}
+
+.health-item.warning {
+  border-color: #eab308;
+  background-color: #422006;
+}
+
+.health-item.ok {
+  border-color: #22c55e;
+  background-color: #052e16;
+}
+
+.health-item-name {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.health-item-rate {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.alert-feed {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.alert-item {
+  background-color: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.alert-item:hover {
+  border-color: #3b82f6;
+}
+
+.alert-item.critical {
+  border-left: 4px solid #ef4444;
+}
+
+.alert-item.high {
+  border-left: 4px solid #f97316;
+}
+
+.alert-item.warning {
+  border-left: 4px solid #eab308;
+}
+
+.alert-item.info {
+  border-left: 4px solid #3b82f6;
+}
+
+.alert-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.alert-severity {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.alert-severity.critical {
+  background-color: #ef4444;
+  color: white;
+}
+
+.alert-severity.high {
+  background-color: #f97316;
+  color: white;
+}
+
+.alert-severity.warning {
+  background-color: #eab308;
+  color: black;
+}
+
+.alert-severity.info {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.alert-key {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.alert-reason {
+  font-size: 13px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.alert-time {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.btn-primary {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #2563eb;
+}
+
+.btn-secondary {
+  background-color: #475569;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background-color: #64748b;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.stat-item {
+  background-color: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.unidentified-panel {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.unidentified-item {
+  font-size: 13px;
+  padding: 8px;
+  border-bottom: 1px solid #334155;
+}
+
+.unidentified-item:last-child {
+  border-bottom: none;
+}
+
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #94a3b8;
+}
+
+.error {
+  background-color: #450a0a;
+  border: 1px solid #ef4444;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.error-message {
+  color: #fca5a5;
+  font-size: 14px;
+}

@@ -1,0 +1,47 @@
+# Generated logs, dumps and ground truth are evidence, not source.
+platform.log
+*.log
+!docs/*.log
+dump*.log
+ground_truth.jsonl
+*.dump
+platform.log.*
+
+# Detector runtime artefacts
+*.sqlite
+*.sqlite3
+outbox.db
+.alerts.jsonl
+.web-snapshots/
+
+# AWS and local secrets
+.env
+.env.*
+*.pem
+aws-credentials*
+.aws/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+
+# Node / React
+node_modules/
+dist/
+web/*/dist/
+.vite/
+npm-debug.log*
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

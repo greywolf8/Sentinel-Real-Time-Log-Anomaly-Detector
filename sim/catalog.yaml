@@ -1,0 +1,116 @@
+# sim/catalog.yaml
+#
+# Shared vocabulary for the demo platform: services, components, error/warning codes.
+# Loaded by the generator (sim/) and by the detector (detector/) as a DATA FILE. The
+# detector must never import sim/ code, only read this file.
+#
+# Code layout follows docs/sentinel-plan.md section 5 and must not change without asking:
+#   byte 0-12 timestamp ms | byte 14 level | byte 16-18 service | byte 20-22 component
+#   byte 24-28 code (00000 for success) | byte 30-35 latency ms | byte 37-44 trace id
+# Success lines use code 00000 so the hot path can skip code handling (section 5).
+
+version: 1
+
+# name is the human label used in alerts (section 9, "service": "claim-adjudication").
+services:
+  PAY:
+    name: payment-remittance
+  CLM:
+    name: claims-adjudication
+  ELG:
+    name: member-eligibility
+  PRV:
+    name: provider-enrollment
+  ADM:
+    name: admin-integrity
+
+# components: service, name, criticality (used by detector severity, section 8.7),
+# and the success-line template with its rps/base err, which the generator takes from
+# platform.yaml. Catalog stays descriptive; platform.yaml is the tunable file.
+components:
+  RMT: {service: PAY, name: remit-generator, criticality: 0.9, success: "remit 835 built remit=RMT-{n}"}
+  EXP: {service: PAY, name: payment-file-export, criticality: 0.8, success: "payment file written file=pay_{date}_{n}.ach"}
+  LDG: {service: PAY, name: ledger-writer, criticality: 0.9, success: "ledger txn committed txn=LDG-{n}"}
+  BNK: {service: PAY, name: bank-gateway, criticality: 0.95, success: "bank sftp upload ok host=bank-gw-{n}"}
+  EDT: {service: CLM, name: edit-engine, criticality: 1.0, success: "edits applied claim=CLM-{n} edits={k} outcome=paid"}
+  PRC: {service: CLM, name: pricing-engine, criticality: 0.7, success: "priced claim=CLM-{n} schedule=FS-{yy}"}
+  DUP: {service: CLM, name: duplicate-check, criticality: 0.6, success: "dup check clear claim=CLM-{n}"}
+  STR: {service: CLM, name: claim-store, criticality: 1.0, success: "claim persisted claim=CLM-{n}"}
+  X12: {service: ELG, name: x12-270-271-gateway, criticality: 0.7, success: "271 response sent isa=ISA-{n}"}
+  MBR: {service: ELG, name: member-lookup, criticality: 0.9, success: "member lookup ok member=MBR-{n}"}
+  CCH: {service: ELG, name: eligibility-cache, criticality: 0.6, success: "cache hit key=K-{n}"}
+  CVR: {service: ELG, name: coverage-rules, criticality: 0.5, success: "coverage resolved member=MBR-{n}"}
+  INT: {service: PRV, name: enrollment-intake, criticality: 0.6, success: "application accepted app=APP-{n}"}
+  CRD: {service: PRV, name: credential-verify, criticality: 0.7, success: "credentials verified npi={npi}"}
+  NPI: {service: PRV, name: npi-registry-client, criticality: 0.7, success: "npi lookup ok npi={npi}"}
+  PST: {service: PRV, name: provider-store, criticality: 0.8, success: "provider record saved prov=PRV-{n}"}
+  AUT: {service: ADM, name: auth-service, criticality: 0.9, success: "token validated user=U-{n}"}
+  AUD: {service: ADM, name: audit-trail, criticality: 1.0, success: "audit event stored event=EVT-{n}"}
+  RPT: {service: ADM, name: report-export, criticality: 0.3, success: "report exported report=R-{n}"}
+  FWA: {service: ADM, name: fwa-scorer, criticality: 0.7, success: "fwa scored claim=CLM-{n} score=0.{nn}"}
+
+# codes: the 48 error and warning codes from sections 4.1-4.5.
+#   level:    E error, W warning (business denials and non-fatal events)
+#   weight:   relative share of the component's error (E) or warning (W) budget
+#   template: message text, {..} fields filled by the generator
+#   latency_ms: typical end-to-end latency for this code, used by the latency detector
+#   latency_min_ms: floor, so an injected code never reports an implausibly fast failure
+# Codes not listed here are "unknown_code" to the detector (section 8.9) and feed the
+# new-code detector (section 8.6).
+codes:
+  # --- payment-remittance (PAY) ---
+  E5101: {service: PAY, component: RMT, level: E, weight: 0.55, template: "REMIT_835_BUILD_FAILED remit=RMT-{n} reason=segment_count_mismatch", latency_ms: 850, latency_min_ms: 400}
+  E5102: {service: PAY, component: RMT, level: E, weight: 0.45, template: "PAYEE_ADDRESS_MISSING provider=PRV-{n}", latency_ms: 90, latency_min_ms: 40}
+  W5103: {service: PAY, component: RMT, level: W, weight: 1.0, template: "REMIT_BATCH_SLOW batch=B-{n} ms={ms}", latency_ms: 2200, latency_min_ms: 900}
+  E5201: {service: PAY, component: EXP, level: E, weight: 0.5, template: "ACH_FILE_WRITE_FAILED file=pay_{date}_{n}.ach errno=ENOSPC", latency_ms: 1400, latency_min_ms: 500}
+  E5202: {service: PAY, component: EXP, level: E, weight: 0.5, template: "FILE_CHECKSUM_MISMATCH file=pay_{date}_{n}.ach", latency_ms: 700, latency_min_ms: 300}
+  E5301: {service: PAY, component: LDG, level: E, weight: 0.5, template: "LEDGER_TXN_ROLLBACK txn=LDG-{n} reason=deadlock", latency_ms: 310, latency_min_ms: 120}
+  E5302: {service: PAY, component: LDG, level: E, weight: 0.5, template: "FUND_ACCOUNT_LOOKUP_TIMEOUT fund=F-{n} after_ms={ms}", latency_ms: 3000, latency_min_ms: 1500}
+  E5401: {service: PAY, component: BNK, level: E, weight: 0.6, template: "BANK_SFTP_TIMEOUT host=bank-gw-{n} after_ms={ms}", latency_ms: 30000, latency_min_ms: 10000}
+  E5402: {service: PAY, component: BNK, level: E, weight: 0.4, template: "BANK_ACK_REJECTED ack=R{nn} file=pay_{date}_{n}.ach", latency_ms: 18000, latency_min_ms: 5000}
+
+  # --- claims-adjudication (CLM) ---
+  E4110: {service: CLM, component: EDT, level: E, weight: 0.5, template: "EDIT_ENGINE_RULESET_LOAD_FAILED ruleset=v{n}", latency_ms: 45, latency_min_ms: 20}
+  E4111: {service: CLM, component: EDT, level: E, weight: 0.5, template: "EDIT_EVAL_TIMEOUT claim=CLM-{n} edit=EDIT_{nn} after_ms={ms}", latency_ms: 2000, latency_min_ms: 800}
+  # W4101-W4105 shares are the baseline denial mix the drift detector watches (section 4.2).
+  W4101: {service: CLM, component: EDT, level: W, weight: 0.25, template: "EDIT_0101 member_not_eligible claim=CLM-{n}", latency_ms: 38, latency_min_ms: 20, denial: EDIT_0101}
+  W4102: {service: CLM, component: EDT, level: W, weight: 0.15, template: "EDIT_0102 provider_not_enrolled claim=CLM-{n}", latency_ms: 41, latency_min_ms: 20, denial: EDIT_0102}
+  W4103: {service: CLM, component: EDT, level: W, weight: 0.30, template: "EDIT_0103 procedure_not_covered claim=CLM-{n} proc={cpt}", latency_ms: 38, latency_min_ms: 20, denial: EDIT_0103}
+  W4104: {service: CLM, component: EDT, level: W, weight: 0.20, template: "EDIT_0104 prior_auth_missing claim=CLM-{n}", latency_ms: 36, latency_min_ms: 20, denial: EDIT_0104}
+  W4105: {service: CLM, component: EDT, level: W, weight: 0.10, template: "EDIT_0105 timely_filing_exceeded claim=CLM-{n}", latency_ms: 34, latency_min_ms: 20, denial: EDIT_0105}
+  E4210: {service: CLM, component: PRC, level: E, weight: 0.5, template: "FEE_SCHEDULE_NOT_FOUND proc={cpt} dos={date}", latency_ms: 33, latency_min_ms: 15}
+  E4211: {service: CLM, component: PRC, level: E, weight: 0.5, template: "PRICING_CALC_OVERFLOW claim=CLM-{n}", latency_ms: 61, latency_min_ms: 25}
+  E4310: {service: CLM, component: DUP, level: E, weight: 0.7, template: "DUP_INDEX_UNAVAILABLE shard={n}", latency_ms: 1200, latency_min_ms: 400}
+  W4301: {service: CLM, component: DUP, level: W, weight: 1.0, template: "DUPLICATE_CLAIM_SUSPECTED claim=CLM-{n} orig=CLM-{m}", latency_ms: 120, latency_min_ms: 50}
+  E4410: {service: CLM, component: STR, level: E, weight: 0.6, template: "CLAIM_DB_TIMEOUT table=claims after_ms={ms}", latency_ms: 3000, latency_min_ms: 1200}
+  E4411: {service: CLM, component: STR, level: E, weight: 0.4, template: "CLAIM_DB_CONN_POOL_EXHAUSTED pool=adj-rw", latency_ms: 5, latency_min_ms: 2}
+
+  # --- member-eligibility (ELG) ---
+  E2101: {service: ELG, component: X12, level: E, weight: 0.5, template: "X12_270_PARSE_ERROR isa=ISA-{n} segment=NM1", latency_ms: 26, latency_min_ms: 10}
+  E2102: {service: ELG, component: X12, level: E, weight: 0.5, template: "X12_271_RESPONSE_TIMEOUT payer=ST{nn} after_ms={ms}", latency_ms: 2500, latency_min_ms: 900}
+  E2201: {service: ELG, component: MBR, level: E, weight: 0.7, template: "MEMBER_INDEX_TIMEOUT after_ms={ms}", latency_ms: 2000, latency_min_ms: 800}
+  W2202: {service: ELG, component: MBR, level: W, weight: 1.0, template: "MEMBER_NOT_FOUND member=MBR-{n}", latency_ms: 12, latency_min_ms: 5}
+  E2301: {service: ELG, component: CCH, level: E, weight: 0.5, template: "CACHE_NODE_UNREACHABLE node=cache-{n}", latency_ms: 350, latency_min_ms: 120}
+  W2302: {service: ELG, component: CCH, level: W, weight: 1.0, template: "CACHE_MISS_RATE_HIGH pct={n}", latency_ms: 3, latency_min_ms: 1}
+  E2401: {service: ELG, component: CVR, level: E, weight: 0.5, template: "COVERAGE_RULES_STALE version=v{n}", latency_ms: 30, latency_min_ms: 12}
+  E2402: {service: ELG, component: CVR, level: E, weight: 0.5, template: "SPAN_OVERLAP_UNRESOLVED member=MBR-{n}", latency_ms: 55, latency_min_ms: 20}
+
+  # --- provider-enrollment (PRV) ---
+  E3101: {service: PRV, component: INT, level: E, weight: 0.7, template: "ENROLL_FORM_VALIDATION_FAILED app=APP-{n} field=taxonomy", latency_ms: 80, latency_min_ms: 30}
+  W3102: {service: PRV, component: INT, level: W, weight: 1.0, template: "ENROLL_DOC_MISSING app=APP-{n} doc=W9", latency_ms: 75, latency_min_ms: 30}
+  E3201: {service: PRV, component: CRD, level: E, weight: 0.6, template: "LICENSE_BOARD_API_TIMEOUT state={state} after_ms={ms}", latency_ms: 3000, latency_min_ms: 1000}
+  E3202: {service: PRV, component: CRD, level: E, weight: 0.4, template: "EXCLUSION_CHECK_FAILED npi={npi}", latency_ms: 220, latency_min_ms: 80}
+  E3301: {service: PRV, component: NPI, level: E, weight: 0.65, template: "NPI_LOOKUP_5XX status=503 endpoint=npi-registry", latency_ms: 210, latency_min_ms: 80}
+  E3302: {service: PRV, component: NPI, level: E, weight: 0.35, template: "NPI_RATE_LIMITED retry_after_s={n}", latency_ms: 40, latency_min_ms: 15}
+  E3401: {service: PRV, component: PST, level: E, weight: 0.5, template: "PROVIDER_DB_DEADLOCK txn=PTX-{n}", latency_ms: 420, latency_min_ms: 150}
+  E3402: {service: PRV, component: PST, level: E, weight: 0.5, template: "PROVIDER_INDEX_REBUILD_FAILED index=idx_npi", latency_ms: 9000, latency_min_ms: 3000}
+
+  # --- admin-integrity (ADM) ---
+  E1101: {service: ADM, component: AUT, level: E, weight: 0.45, template: "AUTH_TOKEN_VALIDATE_FAILED user=U-{n} reason=expired", latency_ms: 6, latency_min_ms: 2}
+  W1102: {service: ADM, component: AUT, level: W, weight: 1.0, template: "AUTH_BAD_PASSWORD user=U-{n} ip=10.20.{a}.{b}", latency_ms: 6, latency_min_ms: 2}
+  E1103: {service: ADM, component: AUT, level: E, weight: 0.55, template: "IDP_UNREACHABLE idp=idp-{n} after_ms={ms}", latency_ms: 2000, latency_min_ms: 700}
+  E1201: {service: ADM, component: AUD, level: E, weight: 1.0, template: "AUDIT_WRITE_FAILED event=EVT-{n}", latency_ms: 40, latency_min_ms: 15}
+  E1301: {service: ADM, component: RPT, level: E, weight: 0.5, template: "REPORT_TIMEOUT report=R-{n} after_ms={ms}", latency_ms: 5000, latency_min_ms: 2000}
+  E1302: {service: ADM, component: RPT, level: E, weight: 0.5, template: "EXPORT_OBJECT_PUT_FAILED bucket=rpt-exports", latency_ms: 1800, latency_min_ms: 600}
+  E1401: {service: ADM, component: FWA, level: E, weight: 0.4, template: "FWA_MODEL_LOAD_FAILED model=v{n}", latency_ms: 70, latency_min_ms: 25}
+  W1402: {service: ADM, component: FWA, level: W, weight: 1.0, template: "FWA_SCORE_HIGH claim=CLM-{n} score=0.{nn}", latency_ms: 95, latency_min_ms: 40}

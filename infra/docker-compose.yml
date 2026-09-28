@@ -1,0 +1,33 @@
+# LocalStack for local AWS services testing (docs/sentinel-plan.md section 10)
+# Run with: docker-compose up -d
+# LocalStack provides S3, SNS, CloudWatch, and other AWS services locally
+version: '3.8'
+
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: sentinel-localstack
+    ports:
+      - "4566:4566"  # LocalStack edge port
+      - "4510-4559:4510-4559"  # Service ports
+    environment:
+      - DEBUG=1
+      - SERVICES=sns,cloudwatch,logs
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - "./localstack_data:/tmp/localstack/data"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      - sentinel-network
+
+networks:
+  sentinel-network:
+    driver: bridge
+
+volumes:
+  localstack_data:

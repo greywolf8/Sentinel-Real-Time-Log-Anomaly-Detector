@@ -1,0 +1,112 @@
+# sim/platform.yaml
+#
+# Tunable behaviour of the demo platform: per-component traffic, error rates, latency
+# distribution, code weights, dependency edges and propagation coupling. The generator
+# reads this; the Fault Console edits it through the control API (which never writes to
+# the log). Adding a component should be a YAML change here plus catalog.yaml (section 17).
+#
+# Rates in section 4 are normal mode. "err" is the fraction of lines at level E or F.
+# Denials (level W) are business outcomes and are not errors, so the denial rate is
+# separate: CLM.EDT denies 6% of claims, ADM.AUT sees bad passwords at 2%.
+#
+# Section 4 quotes a warn rate only for those two. The other W codes in the section 4
+# tables (W5103 slow remit batch, W4301 suspected duplicate, W2202 member not found,
+# W2302 cache miss rate, W3102 missing enrolment document, W1402 high FWA score) are given
+# plausible rates here, because a catalogued code that is never drawn is dead weight and
+# gives the code-mix detector nothing to watch. They are ordinary operational warnings, not
+# denials, so they do not affect the payment-cycle story.
+
+version: 1
+
+# Total normal-mode volume is about 2,800 lines/s across the platform (section 4.5).
+platform:
+  tick_ms: 50            # per-component scheduling tick; error draws are binomial per tick
+  # The plan's sample log uses epoch ms 1790603412345, i.e. 2026-05-28T02:30Z. That is
+  # kept as start_epoch_ms for reference, and the demo hour below moves the clock to
+  # business hours so the first impression is normal traffic rather than an overnight
+  # trickle. Override with --start-hour-utc.
+  start_epoch_ms: 1790603400000
+  demo_start_hour_utc: 13
+  jitter: 0.08           # multiplicative noise on the per-tick volume
+  daily:
+    enabled: true
+    # A claims platform is quiet overnight, ramps at open, and runs a trailing-edge batch
+    # in the evening that also raises the error rate. The mean multiplier is about 1.1, so
+    # "about 2,800 lines/s" (section 4.5) is the business-hours figure.
+    # hour_utc, volume_multiplier, err_multiplier
+    curve:
+      - {hours: [0, 1, 2, 3, 4, 5], volume: 0.45, err: 0.8}
+      - {hours: [6, 7, 8, 9], volume: 0.90, err: 0.9}
+      - {hours: [10, 11, 12, 13, 14, 15, 16], volume: 1.15, err: 1.0}
+      - {hours: [17, 18, 19, 20, 21, 22], volume: 1.90, err: 1.9}
+      - {hours: [23], volume: 0.80, err: 1.1}
+  latency:
+    # Log-normal latency: ln(latency) ~ N(ln(p50_ms), sigma), clamped at 2 ms.
+    sigma: 0.55
+    min_ms: 2
+    max_ms: 120000
+
+components:
+  # --- payment-remittance (PAY) ---
+  RMT: {rps: 60, err: 0.006, warn: 0.004, p50_ms: 42, depends_on: [CLM.STR]}
+  EXP: {rps: 8, err: 0.003, p50_ms: 260, depends_on: [PAY.RMT]}
+  LDG: {rps: 120, err: 0.002, p50_ms: 9, depends_on: [PAY.RMT]}
+  BNK: {rps: 4, err: 0.010, p50_ms: 900, depends_on: [PAY.EXP]}
+
+  # --- claims-adjudication (CLM) ---
+  EDT: {rps: 250, err: 0.008, warn: 0.06, p50_ms: 38, depends_on: [ELG.MBR, PRV.PST], denials: [W4101, W4102, W4103, W4104, W4105]}
+  PRC: {rps: 220, err: 0.003, p50_ms: 27, depends_on: [CLM.EDT]}
+  DUP: {rps: 250, err: 0.002, warn: 0.0012, p50_ms: 11, depends_on: [CLM.STR]}
+  STR: {rps: 300, err: 0.002, p50_ms: 7, depends_on: []}
+
+  # --- member-eligibility (ELG) ---
+  X12: {rps: 180, err: 0.004, p50_ms: 22, depends_on: [ELG.MBR]}
+  MBR: {rps: 320, err: 0.002, warn: 0.004, p50_ms: 8, depends_on: [ELG.CCH]}
+  CCH: {rps: 400, err: 0.001, warn: 0.002, p50_ms: 2, depends_on: []}
+  CVR: {rps: 150, err: 0.003, p50_ms: 17, depends_on: [ELG.CCH]}
+
+  # --- provider-enrollment (PRV) ---
+  INT: {rps: 25, err: 0.012, warn: 0.03, p50_ms: 74, depends_on: [PRV.CRD]}
+  CRD: {rps: 30, err: 0.010, p50_ms: 210, depends_on: [PRV.NPI]}
+  NPI: {rps: 40, err: 0.008, p50_ms: 190, depends_on: []}
+  PST: {rps: 60, err: 0.002, p50_ms: 33, depends_on: []}
+
+  # --- admin-integrity (ADM) ---
+  AUT: {rps: 90, err: 0.003, warn: 0.02, p50_ms: 6, depends_on: [], denials: [W1102]}
+  AUD: {rps: 200, err: 0.0005, p50_ms: 4, depends_on: [ADM.AUT]}
+  RPT: {rps: 5, err: 0.015, p50_ms: 1400, depends_on: [CLM.STR]}
+  FWA: {rps: 100, err: 0.004, warn: 0.008, p50_ms: 88, depends_on: [CLM.STR]}
+
+# Section 4.6. downstream_err = base + coupling * max(0, upstream_err - upstream_base)
+# applied lag_s after the upstream deviation starts. Coupling values are copied from the
+# spec; lag_s drives the timeline of the cascade the incident engine groups.
+propagation:
+  - {from: ELG.CCH, to: ELG.MBR, coupling: 0.5, lag_s: 2}
+  - {from: ELG.MBR, to: ELG.X12, coupling: 0.6, lag_s: 2}
+  - {from: ELG.MBR, to: CLM.EDT, coupling: 0.6, lag_s: 3}
+  - {from: PRV.PST, to: CLM.EDT, coupling: 0.4, lag_s: 3}
+  - {from: CLM.EDT, to: CLM.PRC, coupling: 0.5, lag_s: 2}
+  - {from: CLM.STR, to: CLM.DUP, coupling: 0.6, lag_s: 2}
+  - {from: CLM.STR, to: PAY.RMT, coupling: 0.5, lag_s: 4}
+  - {from: PAY.RMT, to: PAY.EXP, coupling: 0.5, lag_s: 3}
+  - {from: PAY.EXP, to: PAY.BNK, coupling: 0.5, lag_s: 3}
+  - {from: PRV.NPI, to: PRV.CRD, coupling: 0.6, lag_s: 2}
+  - {from: PRV.CRD, to: PRV.INT, coupling: 0.5, lag_s: 2}
+  - {from: CLM.STR, to: ADM.RPT, coupling: 0.5, lag_s: 3}
+  - {from: CLM.STR, to: ADM.FWA, coupling: 0.4, lag_s: 3}
+
+# Latency degradation follows a milder coupling so p95 moves without error volume moving
+# (section 8.6, latency shift detector). Same lag semantics as above.
+latency_propagation:
+  coupling: 0.35
+  lag_s: 2
+  cap_multiplier: 6.0
+
+# Denials carry a mix; the drift detector compares the live 60 s mix to this baseline
+# (section 4.2, bad_rule_deploy scenario shifts W4103 from 0.30 to 0.55+).
+denial_mix:
+  W4101: 0.25
+  W4102: 0.15
+  W4103: 0.30
+  W4104: 0.20
+  W4105: 0.10
