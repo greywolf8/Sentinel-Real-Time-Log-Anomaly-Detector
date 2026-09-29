@@ -8,6 +8,7 @@ endpoint, unidentified-log and health endpoints.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from datetime import datetime, timezone
@@ -139,7 +140,15 @@ async def startup() -> None:
     pipeline = build_pipeline(log_path, catalog=catalog, vocab=vocab, follow=True, start_at_end=False)
 
     # Create incident engine with propagation edges
-    propagation_edges = platform.get("propagation", [])
+    propagation_edges = [
+        {
+            "from": e.src,
+            "to": e.dst,
+            "coupling": e.coupling,
+            "lag_s": e.lag_s,
+        }
+        for e in platform.propagation
+    ]
     incident_engine = IncidentEngine(propagation_edges=propagation_edges)
 
     # Initialize outbox
@@ -191,43 +200,49 @@ async def run_detector() -> None:
 
     logger.info("Detector task running")
 
-    while not stop_event.is_set():
-        try:
-            # Follow the log
-            await pipeline.follow(stop=stop_event)
+    # follow() drains on its own, so it owns the reader and the cold path. The loop below
+    # owns delivery: it consumes the alerts follow() fires. Both share this one event loop.
+    follower = asyncio.create_task(pipeline.follow(stop=stop_event), name="sentinel-follow")
 
-            # Process any pending alerts
-            alerts = pipeline.drain()
-            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    try:
+        while not stop_event.is_set():
+            try:
+                # Process any pending alerts
+                alerts = pipeline.take_alerts()
+                now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
-            for alert in alerts:
-                # Redact evidence
-                redacted_alert = redact_alert(alert, redactor)
+                for alert in alerts:
+                    # Redact evidence
+                    redacted_alert = redact_alert(alert, redactor)
 
-                # Process through incident engine
-                incident = incident_engine.process_alert(alert, now_ms)
+                    # Process through incident engine
+                    incident = incident_engine.process_alert(alert, now_ms)
 
-                # Broadcast alert
-                alert_json = {
-                    "alert": redacted_alert,
-                    "incident": incident.to_json(),
-                }
-                await connection_state.broadcast(alert_json)
+                    # Broadcast alert
+                    alert_json = {
+                        "alert": redacted_alert,
+                        "incident": incident.to_json(),
+                    }
+                    await connection_state.broadcast(alert_json)
 
-                # Add to outbox for CloudWatch delivery
-                if outbox:
-                    idempotency_key = f"{alert.alert.alert_id}_{alert.alert.opened_at_ms}"
-                    outbox.add(redacted_alert, idempotency_key)
+                    # Add to outbox for CloudWatch delivery
+                    if outbox:
+                        idempotency_key = f"{alert.alert.alert_id}_{alert.alert.opened_at_ms}"
+                        outbox.add(redacted_alert, idempotency_key)
 
-            # Auto-resolve stale incidents
-            incident_engine.auto_resolve_stale(now_ms)
+                # Auto-resolve stale incidents
+                incident_engine.auto_resolve_stale(now_ms)
 
-            # Small sleep to prevent busy loop
-            await asyncio.sleep(0.1)
+                # Small sleep to prevent busy loop
+                await asyncio.sleep(0.1)
 
-        except Exception as e:
-            logger.error(f"Detector task error: {e}")
-            await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Detector task error: {e}")
+                await asyncio.sleep(1)
+    finally:
+        follower.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await follower
 
 
 def redact_alert(alert: ScoredAlert, redactor: Redactor) -> dict[str, Any]:

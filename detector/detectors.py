@@ -526,7 +526,7 @@ class DetectorEngine:
 
     def open_components(self) -> list[str]:
         return [
-            self.rings.key_name(s.index)
-            for s in self.states
-            if s.state is not State.OK and self.rings.slots[s.index].active
+            self.rings.key_name(i)
+            for i, s in enumerate(self.states)
+            if s.state is not State.OK and self.rings.slots[i].active
         ]

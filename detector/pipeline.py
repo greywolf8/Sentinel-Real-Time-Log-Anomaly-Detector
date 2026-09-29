@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable
@@ -30,6 +31,7 @@ from detector.unidentified import Unidentified
 # Section 8.10: bounded queue to the WebSocket broadcaster. Alerts always go to the outbox
 # first; the UI is the thing that may be dropped.
 UI_QUEUE_MAX = 1024
+ALERT_HISTORY_MAX = 1000
 
 
 @dataclass(slots=True)
@@ -139,6 +141,7 @@ class Pipeline:
         self.stats = PipelineStats()
         self.ui_queue: asyncio.Queue[ScoredAlert] = asyncio.Queue(maxsize=UI_QUEUE_MAX)
         self.alerts: list[ScoredAlert] = []
+        self._pending: deque[ScoredAlert] = deque()
         self._closed = False
 
     def _register_components(self, vocab: Vocabulary) -> None:
@@ -223,15 +226,31 @@ class Pipeline:
                 )
                 fired.append(scored)
                 self.alerts.append(scored)
+                if len(self.alerts) > ALERT_HISTORY_MAX:
+                    del self.alerts[0]
+                self._pending.append(scored)
                 self.stats.alerts += 1
                 self._publish(scored)
         # The watermark is the detector's lag: how far behind event time we are.
         self.stats.lag_seconds = max(0.0, float(settled - head_second + 1))
         return fired
 
+    def take_alerts(self) -> list[ScoredAlert]:
+        """Hand the caller every alert fired since the last call, and forget them.
+
+        ``follow`` drains on its own, so the fired alerts have to be buffered rather than
+        returned by ``drain``. Without this buffer the detection results are discarded and
+        nothing downstream ever sees an alert.
+        """
+        if not self._pending:
+            return []
+        taken = list(self._pending)
+        self._pending.clear()
+        return taken
+
     def _breach_seconds(self, key: str, second: int) -> int:
-        for state in self.detectors.states:
-            if self.rings.key_name(state.index) == key:
+        for i, state in enumerate(self.detectors.states):
+            if self.rings.key_name(i) == key:
                 if state.state is State.OK or state.open_since <= 0:
                     return 0
                 return max(0, second - state.open_since)
